@@ -14,7 +14,10 @@ STATUS_PLAYING = "PLAYING"
 STATUS_PAUSED = "PAUSED"
 STATUS_GAME_OVER = "GAME_OVER"
 
-BASE_SPEED = 3.0
+# 改良機能04：スピード設定
+BASE_SPEED = 6.0
+SPEED_INCREASE = 0.50
+
 MAX_LIVES = 3
 HEART_RATE = 0.05
 COIN_RATE = 0.30
@@ -145,7 +148,18 @@ def move_course_one_row(state, rng):
     state["x"] += state["direction"]
     state["scroll_count"] += 1
 
+    old_level = state["level"]
+
+    # 100行進むごとにレベルアップ
     state["level"] = state["scroll_count"] // 100 + 1
+
+    # 改良機能04：レベルアップ時に速度を上げる
+    if state["level"] > old_level:
+        state["speed"] = (
+            1.0 + (state["level"] - 1) * SPEED_INCREASE
+        )
+
+        state["message"] = "LEVEL UP! SPEED UP!"
 
     update_distance_score(state)
 
@@ -230,6 +244,11 @@ def update_game(state, dt, rng):
 
     state["elapsed_time"] += dt
 
+    # 改良機能04：レベルに応じた速度の計算
+    state["speed"] = (
+        1.0 + (state["level"] - 1) * SPEED_INCREASE
+    )
+
     state["scroll_progress"] += (
         BASE_SPEED * state["speed"] * dt
     )
@@ -303,7 +322,7 @@ def draw_game(screen, state):
         else "🖤"
     )
 
-    # スコア・ライフ・コイン数の表示
+    # スコア・ライフ・コイン数・速度の表示
     hud = (
         f"LV {state['level']:02d} | "
         f"SCORE {state['score']:05d} | "
@@ -341,7 +360,7 @@ def draw_game(screen, state):
         if row["heart"] is not None:
             chars[row["heart"]] = "H"
 
-        # 改良機能03：コインの表示
+        # コインの表示
         if row["coin"] is not None:
             chars[row["coin"]] = "@"
 
