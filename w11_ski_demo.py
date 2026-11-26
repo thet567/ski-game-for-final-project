@@ -15,6 +15,8 @@ STATUS_PAUSED = "PAUSED"
 STATUS_GAME_OVER = "GAME_OVER"
 
 BASE_SPEED = 3.0
+MAX_LIVES = 3
+HEART_RATE = 0.05
 
 
 def clamp(value, minimum, maximum):
@@ -40,7 +42,9 @@ def create_state(field_width, field_height, rng):
         "course_center": field_width // 2,
         "course_half_width": half_width,
         "rows": deque(),
-        "game_over_reason": ""
+        "game_over_reason": "",
+        "lives": 1,
+        "message": ""
     }
 
     for _ in range(field_height):
@@ -76,6 +80,7 @@ def create_course_row(state, rng, with_tree=True):
 
     tree = None
     stone = None
+    heart = None
 
     tree_rate = min(
         0.52, 0.23 + (state["level"] - 1) * 0.055
@@ -92,11 +97,22 @@ def create_course_row(state, rng, with_tree=True):
         if stone == tree:
             stone = None
 
+    # 改良機能02：ライフアイテムの生成
+    if with_tree and rng.random() < HEART_RATE:
+        positions = [
+            x for x in range(left + 3, right - 2)
+            if x not in (tree, stone)
+        ]
+
+        if positions:
+            heart = rng.choice(positions)
+
     return {
         "left": left,
         "right": right,
         "tree": tree,
-        "stone": stone
+        "stone": stone,
+        "heart": heart
     }
 
 
@@ -119,24 +135,61 @@ def move_course_one_row(state, rng):
     update_distance_score(state)
 
 
+# 改良機能02：ライフを失う処理
+def lose_life(state, reason):
+    if state["lives"] > 0:
+        state["lives"] -= 1
+
+        state["message"] = (
+            f"{reason} EXTRA LIFE USED!"
+        )
+
+        row = state["rows"][state["y"]]
+
+        # プレイヤーをコースの中央に戻す
+        state["x"] = (
+            row["left"] + row["right"]
+        ) // 2
+
+        row["tree"] = None
+        row["stone"] = None
+
+    else:
+        state["game_over_reason"] = reason
+        state["status"] = STATUS_GAME_OVER
+
+
+# 改良機能02：ライフ回復
+def collect_heart(state, row):
+    if state["lives"] < MAX_LIVES:
+        state["lives"] += 1
+        state["message"] = "HEART COLLECTED! LIFE +1"
+
+    else:
+        state["message"] = "MAX LIFE!"
+
+    row["heart"] = None
+
+
 def check_collision(state):
     player_x = int(round(state["x"]))
     row = state["rows"][state["y"]]
 
     # 森の端に衝突
     if player_x <= row["left"] or player_x >= row["right"]:
-        state["game_over_reason"] = "FOREST!"
-        state["status"] = STATUS_GAME_OVER
+        lose_life(state, "FOREST!")
 
     # 木に衝突
     elif row["tree"] == player_x:
-        state["game_over_reason"] = "TREE!"
-        state["status"] = STATUS_GAME_OVER
+        lose_life(state, "TREE!")
 
-    # 改良機能01：石との衝突判定
+    # 石に衝突
     elif row["stone"] == player_x:
-        state["game_over_reason"] = "STONE!"
-        state["status"] = STATUS_GAME_OVER
+        lose_life(state, "STONE!")
+
+    # ライフアイテムを取得
+    elif row["heart"] == player_x:
+        collect_heart(state, row)
 
 
 def update_game(state, dt, rng):
@@ -211,9 +264,17 @@ def draw_game(screen, state):
         curses.A_BOLD
     )
 
+    # ライフの数だけハートを表示
+    hearts = (
+        "❤️" * state["lives"]
+        if state["lives"] > 0
+        else "🖤"
+    )
+
     hud = (
         f"LV {state['level']:02d} | "
         f"SCORE {state['score']:05d} | "
+        f"LIFE {hearts} | "
         f"SPEED {state['speed']:.1f}x"
     )
 
@@ -238,9 +299,13 @@ def draw_game(screen, state):
         if row["tree"] is not None:
             chars[row["tree"]] = "*"
 
-        # 改良機能01：石の表示
+        # 石
         if row["stone"] is not None:
             chars[row["stone"]] = "#"
+
+        # ライフアイテム
+        if row["heart"] is not None:
+            chars[row["heart"]] = "H"
 
         # プレイヤー
         if i == state["y"] and 0 <= player_x < width:
@@ -269,7 +334,10 @@ def draw_game(screen, state):
         )
 
     else:
-        message = "Avoid trees and stones!"
+        message = (
+            state["message"]
+            or "Avoid obstacles! Collect H for extra life!"
+        )
 
     draw_line(
         screen,
