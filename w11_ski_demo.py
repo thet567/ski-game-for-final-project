@@ -17,6 +17,8 @@ STATUS_GAME_OVER = "GAME_OVER"
 BASE_SPEED = 3.0
 MAX_LIVES = 3
 HEART_RATE = 0.05
+COIN_RATE = 0.30
+COIN_SCORE = 10
 
 
 def clamp(value, minimum, maximum):
@@ -44,6 +46,7 @@ def create_state(field_width, field_height, rng):
         "rows": deque(),
         "game_over_reason": "",
         "lives": 1,
+        "coins": 0,
         "message": ""
     }
 
@@ -81,6 +84,7 @@ def create_course_row(state, rng, with_tree=True):
     tree = None
     stone = None
     heart = None
+    coin = None
 
     tree_rate = min(
         0.52, 0.23 + (state["level"] - 1) * 0.055
@@ -107,12 +111,23 @@ def create_course_row(state, rng, with_tree=True):
         if positions:
             heart = rng.choice(positions)
 
+    # 改良機能03：コインの生成
+    if with_tree and rng.random() < COIN_RATE:
+        positions = [
+            x for x in range(left + 3, right - 2)
+            if x not in (tree, stone, heart)
+        ]
+
+        if positions:
+            coin = rng.choice(positions)
+
     return {
         "left": left,
         "right": right,
         "tree": tree,
         "stone": stone,
-        "heart": heart
+        "heart": heart,
+        "coin": coin
     }
 
 
@@ -151,6 +166,7 @@ def lose_life(state, reason):
             row["left"] + row["right"]
         ) // 2
 
+        # 障害物を削除する
         row["tree"] = None
         row["stone"] = None
 
@@ -169,6 +185,18 @@ def collect_heart(state, row):
         state["message"] = "MAX LIFE!"
 
     row["heart"] = None
+
+
+# 改良機能03：コインの取得
+def collect_coin(state, row):
+    state["coins"] += 1
+    state["score"] += COIN_SCORE
+
+    state["message"] = (
+        f"COIN COLLECTED! SCORE +{COIN_SCORE}"
+    )
+
+    row["coin"] = None
 
 
 def check_collision(state):
@@ -190,6 +218,10 @@ def check_collision(state):
     # ライフアイテムを取得
     elif row["heart"] == player_x:
         collect_heart(state, row)
+
+    # コインを取得
+    elif row["coin"] == player_x:
+        collect_coin(state, row)
 
 
 def update_game(state, dt, rng):
@@ -271,10 +303,12 @@ def draw_game(screen, state):
         else "🖤"
     )
 
+    # スコア・ライフ・コイン数の表示
     hud = (
         f"LV {state['level']:02d} | "
         f"SCORE {state['score']:05d} | "
         f"LIFE {hearts} | "
+        f"COINS {state['coins']:03d} | "
         f"SPEED {state['speed']:.1f}x"
     )
 
@@ -295,19 +329,23 @@ def draw_game(screen, state):
         for x in range(row["right"], width):
             chars[x] = "*"
 
-        # 木
+        # 木の表示
         if row["tree"] is not None:
             chars[row["tree"]] = "*"
 
-        # 石
+        # 石の表示
         if row["stone"] is not None:
             chars[row["stone"]] = "#"
 
-        # ライフアイテム
+        # ライフアイテムの表示
         if row["heart"] is not None:
             chars[row["heart"]] = "H"
 
-        # プレイヤー
+        # 改良機能03：コインの表示
+        if row["coin"] is not None:
+            chars[row["coin"]] = "@"
+
+        # プレイヤーの表示
         if i == state["y"] and 0 <= player_x < width:
             if state["status"] == STATUS_GAME_OVER:
                 chars[player_x] = "X"
@@ -336,7 +374,7 @@ def draw_game(screen, state):
     else:
         message = (
             state["message"]
-            or "Avoid obstacles! Collect H for extra life!"
+            or "Collect H for life and @ for score!"
         )
 
     draw_line(
