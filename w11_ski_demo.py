@@ -14,7 +14,6 @@ STATUS_PLAYING = "PLAYING"
 STATUS_PAUSED = "PAUSED"
 STATUS_GAME_OVER = "GAME_OVER"
 
-# 改良機能04：スピード設定
 BASE_SPEED = 6.0
 SPEED_INCREASE = 0.50
 
@@ -22,6 +21,9 @@ MAX_LIVES = 3
 HEART_RATE = 0.05
 COIN_RATE = 0.30
 COIN_SCORE = 10
+
+# 改良機能05：敵プレイヤーの出現率
+ENEMY_RATE = 0.10
 
 
 def clamp(value, minimum, maximum):
@@ -88,6 +90,7 @@ def create_course_row(state, rng, with_tree=True):
     stone = None
     heart = None
     coin = None
+    enemy = None
 
     tree_rate = min(
         0.52, 0.23 + (state["level"] - 1) * 0.055
@@ -124,13 +127,24 @@ def create_course_row(state, rng, with_tree=True):
         if positions:
             coin = rng.choice(positions)
 
+    # 改良機能05：敵プレイヤーの生成
+    if with_tree and rng.random() < ENEMY_RATE:
+        positions = [
+            x for x in range(left + 3, right - 2)
+            if x not in (tree, stone, heart, coin)
+        ]
+
+        if positions:
+            enemy = rng.choice(positions)
+
     return {
         "left": left,
         "right": right,
         "tree": tree,
         "stone": stone,
         "heart": heart,
-        "coin": coin
+        "coin": coin,
+        "enemy": enemy
     }
 
 
@@ -153,7 +167,7 @@ def move_course_one_row(state, rng):
     # 100行進むごとにレベルアップ
     state["level"] = state["scroll_count"] // 100 + 1
 
-    # 改良機能04：レベルアップ時に速度を上げる
+    # 改良機能04：スピードアップ
     if state["level"] > old_level:
         state["speed"] = (
             1.0 + (state["level"] - 1) * SPEED_INCREASE
@@ -183,6 +197,7 @@ def lose_life(state, reason):
         # 障害物を削除する
         row["tree"] = None
         row["stone"] = None
+        row["enemy"] = None
 
     else:
         state["game_over_reason"] = reason
@@ -229,6 +244,10 @@ def check_collision(state):
     elif row["stone"] == player_x:
         lose_life(state, "STONE!")
 
+    # 改良機能05：敵プレイヤーに衝突
+    elif row["enemy"] == player_x:
+        lose_life(state, "ENEMY!")
+
     # ライフアイテムを取得
     elif row["heart"] == player_x:
         collect_heart(state, row)
@@ -244,7 +263,7 @@ def update_game(state, dt, rng):
 
     state["elapsed_time"] += dt
 
-    # 改良機能04：レベルに応じた速度の計算
+    # レベルに応じた速度の計算
     state["speed"] = (
         1.0 + (state["level"] - 1) * SPEED_INCREASE
     )
@@ -315,14 +334,13 @@ def draw_game(screen, state):
         curses.A_BOLD
     )
 
-    # ライフの数だけハートを表示
+    # ライフの表示
     hearts = (
         "❤️" * state["lives"]
         if state["lives"] > 0
         else "🖤"
     )
 
-    # スコア・ライフ・コイン数・速度の表示
     hud = (
         f"LV {state['level']:02d} | "
         f"SCORE {state['score']:05d} | "
@@ -364,6 +382,10 @@ def draw_game(screen, state):
         if row["coin"] is not None:
             chars[row["coin"]] = "@"
 
+        # 改良機能05：敵プレイヤーの表示
+        if row["enemy"] is not None:
+            chars[row["enemy"]] = "A"
+
         # プレイヤーの表示
         if i == state["y"] and 0 <= player_x < width:
             if state["status"] == STATUS_GAME_OVER:
@@ -393,7 +415,7 @@ def draw_game(screen, state):
     else:
         message = (
             state["message"]
-            or "Collect H for life and @ for score!"
+            or "Avoid A! Collect H and @!"
         )
 
     draw_line(
