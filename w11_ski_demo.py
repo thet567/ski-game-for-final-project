@@ -21,8 +21,6 @@ MAX_LIVES = 3
 HEART_RATE = 0.05
 COIN_RATE = 0.30
 COIN_SCORE = 10
-
-# 改良機能05：敵プレイヤーの出現率
 ENEMY_RATE = 0.10
 
 
@@ -263,7 +261,7 @@ def update_game(state, dt, rng):
 
     state["elapsed_time"] += dt
 
-    # レベルに応じた速度の計算
+    # 改良機能04：レベルに応じた速度の計算
     state["speed"] = (
         1.0 + (state["level"] - 1) * SPEED_INCREASE
     )
@@ -320,7 +318,63 @@ def draw_line(screen, y, text, style=0):
         )
 
 
-def draw_game(screen, state):
+# 改良機能06：カラー設定
+def setup_colors():
+    if not curses.has_colors():
+        return False
+
+    curses.start_color()
+
+    background = curses.COLOR_BLACK
+
+    try:
+        curses.use_default_colors()
+        background = -1
+    except curses.error:
+        pass
+
+    # 森・木：緑
+    curses.init_pair(1, curses.COLOR_GREEN, background)
+
+    # コイン：白
+    curses.init_pair(2, curses.COLOR_WHITE, background)
+
+    # 石：黄色
+    curses.init_pair(3, curses.COLOR_YELLOW, background)
+
+    # プレイヤー：白
+    curses.init_pair(4, curses.COLOR_WHITE, background)
+
+    # 敵・ハート・ゲームオーバー：赤
+    curses.init_pair(5, curses.COLOR_RED, background)
+
+    return True
+
+
+# 改良機能06：文字ごとの色を設定
+def get_char_style(char, color_enabled):
+    if not color_enabled:
+        return curses.A_NORMAL
+
+    if char == "*":
+        return curses.color_pair(1)
+
+    elif char == "@":
+        return curses.color_pair(2) | curses.A_BOLD
+
+    elif char == "#":
+        return curses.color_pair(3) | curses.A_BOLD
+
+    elif char == "O":
+        return curses.color_pair(4) | curses.A_BOLD
+
+    elif char in ("A", "H", "X"):
+        return curses.color_pair(5) | curses.A_BOLD
+
+    return curses.A_NORMAL
+
+
+def draw_game(screen, state, color_enabled):
     screen.erase()
 
     rows, cols = screen.getmaxyx()
@@ -382,7 +436,7 @@ def draw_game(screen, state):
         if row["coin"] is not None:
             chars[row["coin"]] = "@"
 
-        # 改良機能05：敵プレイヤーの表示
+        # 敵プレイヤーの表示
         if row["enemy"] is not None:
             chars[row["enemy"]] = "A"
 
@@ -393,12 +447,16 @@ def draw_game(screen, state):
             else:
                 chars[player_x] = "O"
 
-        screen.addnstr(
-            FIELD_TOP + i,
-            offset,
-            "".join(chars),
-            width
-        )
+        # 改良機能06：カラー表示
+        for x, char in enumerate(chars):
+            style = get_char_style(char, color_enabled)
+
+            screen.addch(
+                FIELD_TOP + i,
+                offset + x,
+                char,
+                style
+            )
 
     if state["status"] == STATUS_READY:
         message = "READY! Press SPACE to start"
@@ -418,11 +476,19 @@ def draw_game(screen, state):
             or "Avoid A! Collect H and @!"
         )
 
+    message_style = curses.A_BOLD
+
+    if (
+        state["status"] == STATUS_GAME_OVER
+        and color_enabled
+    ):
+        message_style |= curses.color_pair(5)
+
     draw_line(
         screen,
         rows - 3,
         message,
-        curses.A_BOLD
+        message_style
     )
 
     draw_line(
@@ -439,6 +505,9 @@ def run(screen):
         curses.curs_set(0)
     except curses.error:
         pass
+
+    # 改良機能06：カラーの初期化
+    color_enabled = setup_colors()
 
     screen.keypad(True)
     screen.nodelay(True)
@@ -511,7 +580,7 @@ def run(screen):
             state["status"] = STATUS_PLAYING
 
         update_game(state, dt, rng)
-        draw_game(screen, state)
+        draw_game(screen, state, color_enabled)
 
         time.sleep(1.0 / FPS)
 
